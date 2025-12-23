@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>GDS / PXA / LTV Studio</title>
+<style>
+body {
+    background:#0b0b10;
+    color:#eee;
+    font-family:Arial, Helvetica, sans-serif;
+    padding:20px;
+}
+
+h1 {
+    text-align:center;
+    margin-bottom:40px;
+}
+
+section {
+    background:#15151c;
+    padding:20px;
+    border-radius:14px;
+    margin-bottom:40px;
+}
+
+h2 {
+    color:#8fc7ff;
+    margin-top:0;
+}
+
+label {
+    display:block;
+    margin-top:10px;
+    font-size:14px;
+}
+
+input, select, button {
+    background:#1f1f28;
+    color:#fff;
+    border:1px solid #333;
+    border-radius:8px;
+    padding:8px;
+    margin-top:4px;
+}
+
+button {
+    cursor:pointer;
+}
+
+button:hover {
+    background:#2a2a36;
+}
+
+.preview {
+    margin-top:12px;
+    border-radius:10px;
+    border:1px solid #333;
+}
+
+.gradient-preview {
+    height:80px;
+}
+
+.pixel-grid {
+    display:grid;
+    gap:2px;
+    margin-top:10px;
+}
+
+.pixel {
+    width:32px;
+    height:32px;
+    background:#000;
+    cursor:pointer;
+}
+
+.viewer-box {
+    background:#0f0f15;
+    border:1px solid #333;
+    padding:12px;
+    border-radius:10px;
+    margin-top:12px;
+    font-size:13px;
+    white-space:pre-wrap;
+}
+</style>
+</head>
+<body>
+
+<h1>Custom Format Studio</h1>
+
+<!-- ================= GDS ================= -->
+<section>
+<h2>.gds — Gradient Definition System</h2>
+
+<label>Start Color</label>
+<input type="color" id="gdsStart" value="#ff0000">
+
+<label>End Color</label>
+<input type="color" id="gdsEnd" value="#0000ff">
+
+<label>Direction</label>
+<select id="gdsDir">
+    <option value="to right">Horizontal</option>
+    <option value="to bottom">Vertical</option>
+    <option value="45deg">Diagonal</option>
+</select>
+
+<div id="gdsPreview" class="preview gradient-preview"></div>
+
+<button onclick="saveGDS()">Save .gds</button>
+<input type="file" accept=".gds" onchange="loadGDS(this)">
+</section>
+
+<!-- ================= PXA ================= -->
+<section>
+<h2>.pxa — Pixel Art Character</h2>
+
+<label>Character Name</label>
+<input id="pxaName">
+
+<label>Paint Color</label>
+<input type="color" id="pxaColor" value="#ffffff">
+
+<div id="pxaGrid" class="pixel-grid"></div>
+
+<button onclick="savePXA()">Save .pxa</button>
+<input type="file" accept=".pxa" onchange="loadPXA(this)">
+</section>
+
+<!-- ================= LTV ================= -->
+<section>
+<h2>.ltv — Lightweight Timeline Video</h2>
+
+<label>Upload Video</label>
+<input type="file" id="videoInput" accept="video/*">
+
+<button onclick="saveLTV()">Convert → .ltv</button>
+
+<label>Load .ltv</label>
+<input type="file" accept=".ltv" onchange="loadLTV(this)">
+
+<div id="ltvInfo" class="viewer-box">No LTV loaded</div>
+</section>
+
+<script>
+/* ============ UTIL ============ */
+function saveFile(text, name) {
+    const blob = new Blob([text], {type:"application/octet-stream"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    a.click();
+}
+
+function readJSON(file, cb) {
+    const r = new FileReader();
+    r.onload = () => cb(JSON.parse(r.result));
+    r.readAsText(file);
+}
+
+/* ============ GDS ============ */
+const gdsPreview = document.getElementById("gdsPreview");
+
+function updateGDS() {
+    gdsPreview.style.background =
+        `linear-gradient(${gdsDir.value}, ${gdsStart.value}, ${gdsEnd.value})`;
+}
+[gdsStart, gdsEnd, gdsDir].forEach(e => e.oninput = updateGDS);
+updateGDS();
+
+function saveGDS() {
+    saveFile(JSON.stringify({
+        type:"GDS",
+        version:1,
+        gradient:{
+            start:gdsStart.value,
+            end:gdsEnd.value,
+            direction:gdsDir.value
+        }
+    },null,2),"gradient.gds");
+}
+
+function loadGDS(input) {
+    readJSON(input.files[0], d => {
+        gdsStart.value = d.gradient.start;
+        gdsEnd.value = d.gradient.end;
+        gdsDir.value = d.gradient.direction;
+        updateGDS();
+    });
+}
+
+/* ============ PXA ============ */
+const grid = document.getElementById("pxaGrid");
+let size = 8;
+let pixels = [];
+
+function buildGrid() {
+    grid.innerHTML="";
+    grid.style.gridTemplateColumns = `repeat(${size},32px)`;
+    pixels=[];
+    for(let i=0;i<size*size;i++){
+        const p=document.createElement("div");
+        p.className="pixel";
+        p.onclick=()=>{
+            p.style.background=pxaColor.value;
+            pixels[i]=pxaColor.value;
+        };
+        grid.appendChild(p);
+        pixels.push("#000000");
+    }
+}
+buildGrid();
+
+function savePXA() {
+    saveFile(JSON.stringify({
+        type:"PXA",
+        version:1,
+        name:pxaName.value || "Unnamed",
+        size:{width:size,height:size},
+        pixels
+    },null,2),"character.pxa");
+}
+
+function loadPXA(input) {
+    readJSON(input.files[0], d => {
+        pxaName.value = d.name;
+        size = d.size.width;
+        buildGrid();
+        d.pixels.forEach((c,i)=>{
+            grid.children[i].style.background=c;
+            pixels[i]=c;
+        });
+    });
+}
+
+/* ============ LTV ============ */
+function saveLTV() {
+    const f = videoInput.files[0];
+    if(!f) return alert("Upload a video first");
+
+    saveFile(JSON.stringify({
+        type:"LTV",
+        version:1,
+        source:f.name,
+        metadata:{
+            size:f.size,
+            mime:f.type,
+            created:new Date().toISOString()
+        },
+        encoding:{
+            frameRate:12,
+            compression:"delta-lite"
+        },
+        timeline:"abstract-frame-stream"
+    },null,2),f.name.replace(/\.\w+$/,"")+".ltv");
+}
+
+function loadLTV(input) {
+    readJSON(input.files[0], d => {
+        ltvInfo.textContent =
+`LTV FILE
+--------
+Source: ${d.source}
+Version: ${d.version}
+
+Frame Rate: ${d.encoding.frameRate}
+Compression: ${d.encoding.compression}
+
+Created: ${d.metadata.created}
+Size: ${d.metadata.size} bytes
+
+Timeline:
+${d.timeline}`;
+    });
+}
+</script>
+
+</body>
+</html>
