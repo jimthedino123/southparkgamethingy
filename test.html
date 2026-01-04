@@ -1,84 +1,166 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Smiley Sphere WebAR</title>
-
-  <!-- A-Frame -->
-  <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
-
-  <!-- AR.js for A-Frame -->
-  <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/aframe/build/aframe-ar.js"></script>
+  <meta charset="UTF-8" />
+  <title>WebXR Smiley AR</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
   <style>
     body {
       margin: 0;
       overflow: hidden;
-      font-family: sans-serif;
+      background: black;
+      font-family: system-ui, sans-serif;
     }
 
-    #hint {
+    #ui {
       position: fixed;
-      bottom: 12px;
+      top: 12px;
       left: 50%;
       transform: translateX(-50%);
-      background: rgba(0, 0, 0, 0.6);
+      background: rgba(0,0,0,0.6);
       color: white;
-      padding: 8px 14px;
-      border-radius: 10px;
-      font-size: 14px;
+      padding: 10px 16px;
+      border-radius: 12px;
+      z-index: 10;
     }
   </style>
 </head>
-
 <body>
 
-<div id="hint">Point your camera around to see the smiley 🙂</div>
+<div id="ui">Tap the screen to place the smiley 🙂</div>
 
-<a-scene
-  embedded
-  arjs="sourceType: webcam; debugUIEnabled: false;"
-  renderer="antialias: true; alpha: true"
->
-  <!-- Assets -->
-  <a-assets>
-    <canvas id="smileyTexture" width="512" height="512"></canvas>
-  </a-assets>
+<script type="module">
+  import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
+  import { ARButton } from "https://unpkg.com/three@0.160.0/examples/jsm/webxr/ARButton.js";
 
-  <!-- Camera -->
-  <a-camera position="0 1.6 0"></a-camera>
+  let scene, camera, renderer;
+  let reticle;
+  let hitTestSource = null;
+  let hitTestRequested = false;
 
-  <!-- Smiley sphere -->
-  <a-sphere
-    position="0 1.5 -2"
-    radius="0.4"
-    material="src: #smileyTexture; roughness: 0.4; metalness: 0"
-    animation="property: rotation; to: 0 360 0; loop: true; dur: 8000"
-  ></a-sphere>
+  init();
+  renderer.setAnimationLoop(render);
 
-</a-scene>
+  function init() {
+    scene = new THREE.Scene();
 
-<script>
-  const canvas = document.getElementById("smileyTexture");
-  const ctx = canvas.getContext("2d");
+    camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
 
-  // Background
-  ctx.fillStyle = "#FFD400";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.xr.enabled = true;
+    document.body.appendChild(renderer.domElement);
 
-  // Eyes
-  ctx.fillStyle = "#000";
-  ctx.beginPath();
-  ctx.arc(180, 200, 30, 0, Math.PI * 2);
-  ctx.arc(332, 200, 30, 0, Math.PI * 2);
-  ctx.fill();
+    document.body.appendChild(
+      ARButton.createButton(renderer, { requiredFeatures: ["hit-test"] })
+    );
 
-  // Smile
-  ctx.lineWidth = 20;
-  ctx.strokeStyle = "#000";
-  ctx.beginPath();
-  ctx.arc(256, 260, 140, 0, Math.PI);
-  ctx.stroke();
+    // Light
+    scene.add(new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1));
+
+    // Reticle
+    reticle = new THREE.Mesh(
+      new THREE.RingGeometry(0.08, 0.1, 32).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: 0x00ff00 })
+    );
+    reticle.visible = false;
+    scene.add(reticle);
+
+    // Manual tap handler (IMPORTANT)
+    window.addEventListener("touchstart", placeObject);
+    window.addEventListener("click", placeObject);
+
+    window.addEventListener("resize", onResize);
+  }
+
+  function createSmileySphere() {
+    const canvas = document.createElement("canvas");
+    canvas.width = 512;
+    canvas.height = 512;
+    const ctx = canvas.getContext("2d");
+
+    ctx.fillStyle = "#FFD400";
+    ctx.fillRect(0, 0, 512, 512);
+
+    ctx.fillStyle = "#000";
+    ctx.beginPath();
+    ctx.arc(180, 200, 30, 0, Math.PI * 2);
+    ctx.arc(332, 200, 30, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.lineWidth = 20;
+    ctx.strokeStyle = "#000";
+    ctx.beginPath();
+    ctx.arc(256, 260, 140, 0, Math.PI);
+    ctx.stroke();
+
+    const texture = new THREE.CanvasTexture(canvas);
+
+    const sphere = new THREE.Mesh(
+      new THREE.SphereGeometry(0.15, 48, 48),
+      new THREE.MeshStandardMaterial({ map: texture })
+    );
+
+    sphere.userData.spin = true;
+    return sphere;
+  }
+
+  function placeObject() {
+    if (!reticle.visible) return;
+
+    const sphere = createSmileySphere();
+    sphere.position.setFromMatrixPosition(reticle.matrix);
+    scene.add(sphere);
+  }
+
+  function render(_, frame) {
+    if (frame) {
+      const referenceSpace = renderer.xr.getReferenceSpace();
+      const session = renderer.xr.getSession();
+
+      if (!hitTestRequested) {
+        session.requestReferenceSpace("viewer").then(space => {
+          session.requestHitTestSource({ space }).then(source => {
+            hitTestSource = source;
+          });
+        });
+
+        session.addEventListener("end", () => {
+          hitTestRequested = false;
+          hitTestSource = null;
+        });
+
+        hitTestRequested = true;
+      }
+
+      if (hitTestSource) {
+        const hits = frame.getHitTestResults(hitTestSource);
+        if (hits.length > 0) {
+          const pose = hits[0].getPose(referenceSpace);
+          reticle.visible = true;
+          reticle.matrix.fromArray(pose.transform.matrix);
+        } else {
+          reticle.visible = false;
+        }
+      }
+    }
+
+    // Spin placed spheres
+    scene.traverse(obj => {
+      if (obj.userData.spin) {
+        obj.rotation.y += 0.01;
+      }
+    });
+
+    renderer.render(scene, camera);
+  }
+
+  function onResize() {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  }
 </script>
 
 </body>
