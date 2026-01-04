@@ -1,17 +1,11 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>VR Smiley World</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
+  <meta charset="UTF-8">
+  <title>Quest VR Smiley Base</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
-    body {
-      margin: 0;
-      overflow: hidden;
-      background: black;
-      font-family: system-ui, sans-serif;
-    }
+    body { margin: 0; overflow: hidden; background: black; }
   </style>
 </head>
 <body>
@@ -19,23 +13,15 @@
 <script type="module">
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 import { VRButton } from "https://unpkg.com/three@0.160.0/examples/jsm/webxr/VRButton.js";
-import { XRControllerModelFactory } from "https://unpkg.com/three@0.160.0/examples/jsm/webxr/XRControllerModelFactory.js";
 
 let scene, camera, renderer;
-let controllers = [];
-let grabables = [];
-let raycaster = new THREE.Raycaster();
-let tempMatrix = new THREE.Matrix4();
-
-const PAD_Y = 1;
-const GRAVITY = -0.004;
 
 init();
 renderer.setAnimationLoop(render);
 
 function init() {
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x000015);
+  scene.background = new THREE.Color(0x050515);
 
   camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 100);
   camera.position.set(0, 1.6, 2);
@@ -44,184 +30,42 @@ function init() {
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.xr.enabled = true;
   document.body.appendChild(renderer.domElement);
+
   document.body.appendChild(VRButton.createButton(renderer));
 
   scene.add(new THREE.HemisphereLight(0xffffff, 0x222244, 1));
-  const light = new THREE.DirectionalLight(0xffffff, 0.6);
-  light.position.set(2, 4, 2);
-  scene.add(light);
 
   // Floating pad
   const pad = new THREE.Mesh(
-    new THREE.CylinderGeometry(1.3, 1.3, 0.15, 40),
-    new THREE.MeshStandardMaterial({ color: 0x333333 })
+    new THREE.CylinderGeometry(1.2, 1.2, 0.15, 32),
+    new THREE.MeshStandardMaterial({ color: 0x444444 })
   );
-  pad.position.y = PAD_Y;
+  pad.position.y = 1;
   scene.add(pad);
 
-  // Menu panel
-  const menuCanvas = document.createElement("canvas");
-  menuCanvas.width = 512;
-  menuCanvas.height = 512;
-  const menuCtx = menuCanvas.getContext("2d");
+  // Simple smileys
+  const colors = [0xffd400, 0xff6b6b, 0x4dff88, 0x4da6ff, 0xc77dff];
 
-  const menuTexture = new THREE.CanvasTexture(menuCanvas);
-  const menu = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.8, 0.8),
-    new THREE.MeshBasicMaterial({ map: menuTexture, transparent: true })
-  );
-  menu.position.set(1.4, 1.6, 0);
-  menu.rotation.y = -0.5;
-  scene.add(menu);
-
-  function updateMenu(data) {
-    menuCtx.clearRect(0, 0, 512, 512);
-    menuCtx.fillStyle = "rgba(0,0,0,0.75)";
-    menuCtx.fillRect(0, 0, 512, 512);
-
-    menuCtx.fillStyle = "white";
-    menuCtx.font = "bold 42px sans-serif";
-    menuCtx.fillText(data.name, 30, 70);
-
-    menuCtx.font = "28px sans-serif";
-    menuCtx.fillText("Personality:", 30, 130);
-    menuCtx.font = "26px sans-serif";
-    wrapText(menuCtx, data.personality, 30, 170, 450);
-
-    menuCtx.font = "28px sans-serif";
-    menuCtx.fillText("Info:", 30, 310);
-    menuCtx.font = "26px sans-serif";
-    wrapText(menuCtx, data.info, 30, 350, 450);
-
-    menuTexture.needsUpdate = true;
-  }
-
-  updateMenu({
-    name: "Smiley Friends",
-    personality: "Point at a smiley to learn about them.",
-    info: "You can grab them, drop them, and they’ll always come back."
+  colors.forEach((color, i) => {
+    const sphere = new THREE.Mesh(
+      new THREE.SphereGeometry(0.12, 32, 32),
+      new THREE.MeshStandardMaterial({ color })
+    );
+    sphere.position.set(-0.6 + i * 0.3, 1.25, 0);
+    scene.add(sphere);
   });
-
-  // Smileys
-  const smileys = [
-    { color: "#FFD400", name: "Sunny", personality: "Cheerful and optimistic.", info: "Always tries to brighten the room." },
-    { color: "#FF6B6B", name: "Blaze", personality: "Bold and energetic.", info: "Loves chaos and movement." },
-    { color: "#4DFF88", name: "Minty", personality: "Calm and thoughtful.", info: "Enjoys floating peacefully." },
-    { color: "#4DA6FF", name: "Ripple", personality: "Curious explorer.", info: "Always watching everything." },
-    { color: "#C77DFF", name: "Nova", personality: "Mysterious dreamer.", info: "Feels at home in space." }
-  ];
-
-  smileys.forEach((data, i) => {
-    const s = createSmiley(data);
-    s.position.set(-0.6 + i * 0.3, PAD_Y + 0.25, 0);
-    s.userData.home = s.position.clone();
-    s.userData.velocity = new THREE.Vector3();
-    s.userData.data = data;
-    grabables.push(s);
-    scene.add(s);
-  });
-
-  // Controllers
-  const modelFactory = new XRControllerModelFactory();
-  for (let i = 0; i < 2; i++) {
-    const c = renderer.xr.getController(i);
-    c.addEventListener("selectstart", onGrab);
-    c.addEventListener("selectend", onRelease);
-    scene.add(c);
-
-    const grip = renderer.xr.getControllerGrip(i);
-    grip.add(modelFactory.createControllerModel(grip));
-    scene.add(grip);
-
-    controllers.push(c);
-  }
 
   window.addEventListener("resize", onResize);
-
-  function wrapText(ctx, text, x, y, maxWidth) {
-    const words = text.split(" ");
-    let line = "";
-    for (let i = 0; i < words.length; i++) {
-      const test = line + words[i] + " ";
-      if (ctx.measureText(test).width > maxWidth) {
-        ctx.fillText(line, x, y);
-        line = words[i] + " ";
-        y += 32;
-      } else {
-        line = test;
-      }
-    }
-    ctx.fillText(line, x, y);
-  }
-
-  function onGrab(e) {
-    const c = e.target;
-    tempMatrix.identity().extractRotation(c.matrixWorld);
-    raycaster.ray.origin.setFromMatrixPosition(c.matrixWorld);
-    raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
-
-    const hits = raycaster.intersectObjects(grabables);
-    if (hits.length) {
-      const obj = hits[0].object;
-      c.attach(obj);
-      obj.userData.grabbed = true;
-      obj.userData.velocity.set(0, 0, 0);
-      c.userData.held = obj;
-      updateMenu(obj.userData.data);
-    }
-  }
-
-  function onRelease(e) {
-    const c = e.target;
-    if (c.userData.held) {
-      scene.attach(c.userData.held);
-      c.userData.held.userData.grabbed = false;
-      c.userData.held = null;
-    }
-  }
-
-  function render() {
-    grabables.forEach(obj => {
-      if (!obj.userData.grabbed) {
-        obj.userData.velocity.y += GRAVITY;
-        obj.position.add(obj.userData.velocity);
-
-        if (obj.position.y < PAD_Y - 0.2) {
-          obj.position.lerp(obj.userData.home, 0.05);
-          obj.userData.velocity.set(0, 0, 0);
-        }
-
-        obj.rotation.y += 0.01;
-      }
-    });
-
-    renderer.render(scene, camera);
-  }
 }
 
-function createSmiley(data) {
-  const c = document.createElement("canvas");
-  c.width = c.height = 256;
-  const ctx = c.getContext("2d");
+function render() {
+  scene.traverse(obj => {
+    if (obj.isMesh && obj.geometry.type === "SphereGeometry") {
+      obj.rotation.y += 0.01;
+    }
+  });
 
-  ctx.fillStyle = data.color;
-  ctx.fillRect(0, 0, 256, 256);
-
-  ctx.fillStyle = "#000";
-  ctx.beginPath();
-  ctx.arc(80, 90, 18, 0, Math.PI * 2);
-  ctx.arc(176, 90, 18, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.lineWidth = 10;
-  ctx.beginPath();
-  ctx.arc(128, 130, 70, 0, Math.PI);
-  ctx.stroke();
-
-  return new THREE.Mesh(
-    new THREE.SphereGeometry(0.12, 32, 32),
-    new THREE.MeshStandardMaterial({ map: new THREE.CanvasTexture(c) })
-  );
+  renderer.render(scene, camera);
 }
 
 function onResize() {
