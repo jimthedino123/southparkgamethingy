@@ -2,179 +2,83 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>WebXR Smiley Sphere</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smiley Sphere WebAR</title>
+
+  <!-- A-Frame -->
+  <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+
+  <!-- AR.js for A-Frame -->
+  <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/aframe/build/aframe-ar.js"></script>
 
   <style>
     body {
       margin: 0;
       overflow: hidden;
-      font-family: system-ui, sans-serif;
-      background: black;
+      font-family: sans-serif;
     }
 
-    #info {
+    #hint {
       position: fixed;
-      bottom: 14px;
+      bottom: 12px;
       left: 50%;
       transform: translateX(-50%);
-      background: rgba(0,0,0,0.6);
+      background: rgba(0, 0, 0, 0.6);
       color: white;
-      padding: 10px 16px;
-      border-radius: 12px;
+      padding: 8px 14px;
+      border-radius: 10px;
       font-size: 14px;
-      z-index: 10;
     }
   </style>
 </head>
+
 <body>
 
-<div id="info">Tap “Enter AR”, then tap to place the smiley 🙂</div>
+<div id="hint">Point your camera around to see the smiley 🙂</div>
 
-<script type="module">
-  import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
-  import { ARButton } from "https://unpkg.com/three@0.160.0/examples/jsm/webxr/ARButton.js";
+<a-scene
+  embedded
+  arjs="sourceType: webcam; debugUIEnabled: false;"
+  renderer="antialias: true; alpha: true"
+>
+  <!-- Assets -->
+  <a-assets>
+    <canvas id="smileyTexture" width="512" height="512"></canvas>
+  </a-assets>
 
-  let camera, scene, renderer;
-  let controller;
-  let reticle;
-  let hitTestSource = null;
-  let hitTestSourceRequested = false;
+  <!-- Camera -->
+  <a-camera position="0 1.6 0"></a-camera>
 
-  init();
-  animate();
+  <!-- Smiley sphere -->
+  <a-sphere
+    position="0 1.5 -2"
+    radius="0.4"
+    material="src: #smileyTexture; roughness: 0.4; metalness: 0"
+    animation="property: rotation; to: 0 360 0; loop: true; dur: 8000"
+  ></a-sphere>
 
-  function init() {
-    scene = new THREE.Scene();
+</a-scene>
 
-    camera = new THREE.PerspectiveCamera(
-      70,
-      window.innerWidth / window.innerHeight,
-      0.01,
-      20
-    );
+<script>
+  const canvas = document.getElementById("smileyTexture");
+  const ctx = canvas.getContext("2d");
 
-    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setPixelRatio(window.devicePixelRatio);
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.xr.enabled = true;
-    document.body.appendChild(renderer.domElement);
+  // Background
+  ctx.fillStyle = "#FFD400";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    document.body.appendChild(
-      ARButton.createButton(renderer, { requiredFeatures: ["hit-test"] })
-    );
+  // Eyes
+  ctx.fillStyle = "#000";
+  ctx.beginPath();
+  ctx.arc(180, 200, 30, 0, Math.PI * 2);
+  ctx.arc(332, 200, 30, 0, Math.PI * 2);
+  ctx.fill();
 
-    // Light
-    const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
-    scene.add(light);
-
-    // Reticle (placement indicator)
-    reticle = new THREE.Mesh(
-      new THREE.RingGeometry(0.08, 0.1, 32).rotateX(-Math.PI / 2),
-      new THREE.MeshBasicMaterial({ color: 0x00ff00 })
-    );
-    reticle.visible = false;
-    scene.add(reticle);
-
-    // Controller (tap)
-    controller = renderer.xr.getController(0);
-    controller.addEventListener("select", onSelect);
-    scene.add(controller);
-
-    window.addEventListener("resize", onWindowResize);
-  }
-
-  function createSmileySphere() {
-    // Canvas texture
-    const canvas = document.createElement("canvas");
-    canvas.width = 512;
-    canvas.height = 512;
-    const ctx = canvas.getContext("2d");
-
-    // Yellow background
-    ctx.fillStyle = "#FFD400";
-    ctx.fillRect(0, 0, 512, 512);
-
-    // Eyes
-    ctx.fillStyle = "#000";
-    ctx.beginPath();
-    ctx.arc(180, 200, 30, 0, Math.PI * 2);
-    ctx.arc(332, 200, 30, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Smile
-    ctx.lineWidth = 20;
-    ctx.strokeStyle = "#000";
-    ctx.beginPath();
-    ctx.arc(256, 260, 140, 0, Math.PI);
-    ctx.stroke();
-
-    const texture = new THREE.CanvasTexture(canvas);
-
-    const geometry = new THREE.SphereGeometry(0.15, 48, 48);
-    const material = new THREE.MeshStandardMaterial({ map: texture });
-    const sphere = new THREE.Mesh(geometry, material);
-
-    sphere.rotation.y = Math.random() * Math.PI * 2;
-
-    return sphere;
-  }
-
-  function onSelect() {
-    if (reticle.visible) {
-      const sphere = createSmileySphere();
-      sphere.position.setFromMatrixPosition(reticle.matrix);
-      scene.add(sphere);
-    }
-  }
-
-  function animate() {
-    renderer.setAnimationLoop(render);
-  }
-
-  function render(timestamp, frame) {
-    if (frame) {
-      const referenceSpace = renderer.xr.getReferenceSpace();
-      const session = renderer.xr.getSession();
-
-      if (!hitTestSourceRequested) {
-        session.requestReferenceSpace("viewer").then((space) => {
-          session.requestHitTestSource({ space }).then((source) => {
-            hitTestSource = source;
-          });
-        });
-
-        session.addEventListener("end", () => {
-          hitTestSourceRequested = false;
-          hitTestSource = null;
-        });
-
-        hitTestSourceRequested = true;
-      }
-
-      if (hitTestSource) {
-        const hitTestResults = frame.getHitTestResults(hitTestSource);
-
-        if (hitTestResults.length) {
-          const hit = hitTestResults[0];
-          const pose = hit.getPose(referenceSpace);
-
-          reticle.visible = true;
-          reticle.matrix.fromArray(pose.transform.matrix);
-        } else {
-          reticle.visible = false;
-        }
-      }
-    }
-
-    renderer.render(scene, camera);
-  }
-
-  function onWindowResize() {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-  }
+  // Smile
+  ctx.lineWidth = 20;
+  ctx.strokeStyle = "#000";
+  ctx.beginPath();
+  ctx.arc(256, 260, 140, 0, Math.PI);
+  ctx.stroke();
 </script>
 
 </body>
